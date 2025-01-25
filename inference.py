@@ -127,7 +127,7 @@ def main(args):
 
     print('Start inference')
     # Set random seed
-    seed = args.seed
+    seed = args.random_seed
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
