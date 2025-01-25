@@ -399,7 +399,7 @@ class RP_wrapper(nn.Module):
         lpips_fn_alex = lpips.LPIPS(net='alex', spatial=True) # best forward scores
     
         from unet_2d.unet_2d_condition import UNet2DConditionModel
-        pretrained_model_path = os.path.join(root_dir, "base_ckpt", "realisticVisionV51_v51VAE")
+        pretrained_model_path = os.path.join(root_dir, "inverse_painting", "base_ckpt", "realisticVisionV51_v51VAE")
         config = UNet2DConditionModel.load_config(os.path.join(pretrained_model_path, 'unet'))
         
         config["in_channels"] = 4 + 4 + 1 
