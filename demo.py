@@ -18,6 +18,11 @@ from utils.dist_tools import distributed_init
 from utils.inference_helpers import *
 import lpips
 
+# Get the root directory of the inverse_painting project
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(root_dir)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run inference with specified configuration.")
     parser.add_argument("--ckpt_path", type=str, default='checkpoints/renderer/ckpt/checkpoint-global_step-200000.ckpt', help="Path to renderer checkpoint.")
@@ -318,7 +323,7 @@ def main(args):
 
                 next_RP_embeddings_vis = Image.fromarray(next_RP_embeddings_vis)
                 draw = ImageDraw.Draw(next_RP_embeddings_vis)
-                font = ImageFont.truetype("utils/arial.ttf", 40)
+                font = ImageFont.truetype(os.path.join(root_dir, "inverse_painting", "utils", "arial.ttf"), 40)
                 draw.text((10, 10), next_prompt, (255, 0, 0), font=font)
                 next_RP_embeddings_vis = np.array(next_RP_embeddings_vis)
 
