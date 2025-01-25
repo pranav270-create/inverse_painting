@@ -323,7 +323,7 @@ def main(args):
 
                 next_RP_embeddings_vis = Image.fromarray(next_RP_embeddings_vis)
                 draw = ImageDraw.Draw(next_RP_embeddings_vis)
-                font = ImageFont.truetype(os.path.join(root_dir, "inverse_painting", "utils", "arial.ttf"), 40)
+                font = ImageFont.load_default()
                 draw.text((10, 10), next_prompt, (255, 0, 0), font=font)
                 next_RP_embeddings_vis = np.array(next_RP_embeddings_vis)
 
