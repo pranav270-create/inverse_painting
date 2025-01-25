@@ -62,7 +62,9 @@ def get_dataset_info(test_dir):
 def load_pipeline(config, pretrained_model_path, pretrained_clip_path, full_state_dict, dtype, device):
 
     ### >>> create pipeline >>> ###
-    inference_config = OmegaConf.load('./configs/inference/inference.yaml')
+    # Update the path to be relative to the root directory
+    omega_config_path = os.path.join(root_dir, "inverse_painting", "configs", "inference", "inference.yaml")
+    inference_config = OmegaConf.load(omega_config_path)
 
     tokenizer = AutoTokenizer.from_pretrained(
             pretrained_model_path,
