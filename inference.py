@@ -25,45 +25,67 @@ sys.path.append(root_dir)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run inference on a single image.")
-    parser.add_argument("--input_image", type=str, required=True, help="Path to input image.")
+    parser = argparse.ArgumentParser(description="Run inference with specified configuration.")
     parser.add_argument("--ckpt_path", type=str, default='checkpoints/renderer/ckpt/checkpoint-global_step-200000.ckpt', help="Path to renderer checkpoint.")
-    parser.add_argument("--RP_path", type=str, default='./checkpoints/RP/checkpoint-global_step-80000.ckpt', help="Path to RP model checkpoint.")
+    parser.add_argument("--RP_path", type=str, default='./checkpoints/RP/checkpoint-global_step-80000.ckpt', help="Path to LLaVA model checkpoint.")
     parser.add_argument("--output_dir", type=str, default='./results', help="Path to the output directory.")
     parser.add_argument("--llava_path", type=str, default='checkpoints/TP_llava', help="Path to LLaVA model checkpoint.")
-    # Core inference parameters
+    parser.add_argument("--test_dir", type=str, default='./data/demo', help="Path to the directory containing test images.")
+    parser.add_argument("--random_seeds", type=int, nargs='+', default=[1], help="List of random seeds for inference.")
+    parser.add_argument("--num_actual_inference_steps", type=int, default=50, help="Number of actual inference steps.")
     parser.add_argument("--steps", type=int, default=25, help="Number of steps.")
     parser.add_argument("--guidance_scale", type=float, default=2.0, help="Guidance scale for inference.")
-    parser.add_argument("--seed", type=int, default=1, help="Random seed for inference.")
+    parser.add_argument("--TP_guidance_scale", type=float, default=5.0, help="TP guidance scale.")
+    parser.add_argument("--cur_guidance_scale", type=float, default=1.0, help="Current image guidance scale.")
+    parser.add_argument("--RP_guidance_scale", type=float, default=5.0, help="RP guidance scale.")
+    parser.add_argument("--PE_guidance_scale", type=float, default=5.0, help="PE guidance scale.")
+    parser.add_argument("--dilate_RP", type=bool, default=True, help="Dilate RP or not.")
+    parser.add_argument("--PE_sec", type=int, default=20, help="PE section.")
+    parser.add_argument("--total_step", type=int, default=50, help="Total steps.")
+    parser.add_argument("--binary_threshold", type=float, default=0.2, help="Binary threshold.")
+    parser.add_argument("--combine_init", type=bool, default=True, help="Combine initial image.")
+    parser.add_argument("--combine_init_ratio", type=float, default=0.2, help="Ratio to combine initial image.")
+    parser.add_argument("--split", type=str, default='test', help="Data split.")
+    parser.add_argument("--cur_alpha", type=float, default=0.0, help="Current alpha value.")
+    parser.add_argument("--pretrained_model_path", type=str, default="base_ckpt/realisticVisionV51_v51VAE", help="Path to pretrained model.")
+    parser.add_argument("--pretrained_clip_path", type=str, default="./base_ckpt/clip-vit-base-patch32", help="Path to pretrained CLIP model.")
+    parser.add_argument("--tmp_cur_img_folder", type=str, default='cache_cur_img', help="Temporary image folder.")
+    parser.add_argument("--dist", action="store_true", required=False, help="Enable distributed mode.")
+    parser.add_argument("--rank", type=int, default=0, required=False, help="Rank for distributed mode.")
+    parser.add_argument("--world_size", type=int, default=1, required=False, help="World size for distributed mode.")
     return parser.parse_args()
 
 
 def main(args):
     # Load configurations and initialize device
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{args.rank}")
     dtype = torch.float16
     config_path = os.path.join(os.path.dirname(args.ckpt_path), '..', 'config.yaml')
     config = OmegaConf.load(config_path)
 
     # Update config with arguments
     config.update({
-        'pretrained_model_path': 'base_ckpt/realisticVisionV51_v51VAE',  # Using default value
-        'split': 'test',
+        'pretrained_model_path': args.pretrained_model_path,
+        'split': args.split,
         'llava_path': args.llava_path,
-        'binary': True,
-        'binary_threshold': 0.2,
-        'PE_sec': 20,
+        'binary': args.binary_threshold > 0,
+        'binary_threshold': args.binary_threshold,
+        'PE_sec': args.PE_sec,
         'RP_path': args.RP_path,
     })
 
-    # Set up output directory
+    # Set up output directory and data paths
     root_dst_dir = prepare_results_dir(config, args.ckpt_path, args.output_dir)
     full_state_dict = torch.load(args.ckpt_path, map_location='cpu')
     
-    # Get time and random number for unique identification
+    # get time 
     now = datetime.datetime.now()
     time_str = now.strftime("%Y-%m-%d-%H-%M-%S")
     rand_num = random.randint(0, 100000)
+
+    total_step, guidance_scale, cur_guidance_scale, cur_alpha, PE_guidance_scale = args.total_step, args.guidance_scale, args.cur_guidance_scale, args.cur_alpha, args.PE_guidance_scale
+    TP_guidance_scale, RP_guidance_scale, dilate_RP, combine_init, combine_init_ratio = args.TP_guidance_scale, args.RP_guidance_scale, args.dilate_RP, args.combine_init, args.combine_init_ratio
+    steps, num_actual_inference_steps = args.steps, args.num_actual_inference_steps
 
     # Set default parameters
     total_step = 50
@@ -79,25 +101,30 @@ def main(args):
     steps = args.steps
     num_actual_inference_steps = 50
 
-    # Create temporary directory for intermediate results
-    tmp_cur_img_folder = 'cache_cur_img'
-    tmp_cur_img_path = f'{tmp_cur_img_folder}/{time_str}_{rand_num}.png'
-    os.makedirs(tmp_cur_img_folder, exist_ok=True)
+    # this is used for saving images for text generator
+    tmp_cur_img_path = f'{args.tmp_cur_img_folder}/{time_str}_{rand_num}.png'
+    os.makedirs(args.tmp_cur_img_folder, exist_ok=True)
+    next_RP_embeddings = None
+    next_prompt  = None
 
-    # Initialize models
+    # prepare text generator and mask generator
     TP = TP_wrapper(config, full_state_dict, device, dtype)
     RP = RP_wrapper(config, full_state_dict, device, dtype)
+        
+    # prepare time embeddings
+    PE_sec = config['PE_sec']
     PE = PE_wrapper(config, full_state_dict, device, dtype)
-    
-    # Prepare embeddings
     with torch.no_grad():
-        PE_embeddings = PE.embed(config['PE_sec'])
+        PE_embeddings = PE.embed(PE_sec)
+            
+    # prepare negative text embeddings
     negative_next_TP_embeddings = TP.get_negative_embeddings()
 
-    # Load pipeline and LPIPS
-    pipeline, pipeline_kwargs = load_pipeline(config, config['pretrained_model_path'], "./base_ckpt/clip-vit-base-patch32", full_state_dict, dtype, device)
+    # Load inference pipeline and LPIPS for similarity calculations
+    pipeline, pipeline_kwargs = load_pipeline(config, args.pretrained_model_path, args.pretrained_clip_path, full_state_dict, dtype, device)
     lpips_fn_alex = lpips.LPIPS(net='alex', spatial=False).to(device)
 
+    print('Start inference')
     # Set random seed
     seed = args.seed
     random.seed(seed)
@@ -280,6 +307,7 @@ def main(args):
         assert cur_img.shape[0] == ref_img.shape[0] and cur_img.shape[1] == ref_img.shape[1]
 
     print(f"Processing complete. Results saved in: {dst_dir}")
+    return dst_dir
 
 
 if __name__ == "__main__":
