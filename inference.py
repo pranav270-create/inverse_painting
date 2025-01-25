@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--output_dir", type=str, default='./results', help="Path to the output directory.")
     parser.add_argument("--llava_path", type=str, default='checkpoints/TP_llava', help="Path to LLaVA model checkpoint.")
     parser.add_argument("--test_dir", type=str, default='./data/demo', help="Path to the directory containing test images.")
-    parser.add_argument("--random_seeds", type=int, nargs='+', default=[1], help="List of random seeds for inference.")
+    parser.add_argument("--random_seed", type=int, default=1, help="Random seed for inference.")
     parser.add_argument("--num_actual_inference_steps", type=int, default=50, help="Number of actual inference steps.")
     parser.add_argument("--steps", type=int, default=25, help="Number of steps.")
     parser.add_argument("--guidance_scale", type=float, default=2.0, help="Guidance scale for inference.")
