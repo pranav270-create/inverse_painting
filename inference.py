@@ -26,6 +26,7 @@ sys.path.append(root_dir)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run inference with specified configuration.")
+    parser.add_argument("--input_image", type=str, required=True, help="Path to input image.")
     parser.add_argument("--ckpt_path", type=str, default='checkpoints/renderer/ckpt/checkpoint-global_step-200000.ckpt', help="Path to renderer checkpoint.")
     parser.add_argument("--RP_path", type=str, default='./checkpoints/RP/checkpoint-global_step-80000.ckpt', help="Path to LLaVA model checkpoint.")
     parser.add_argument("--output_dir", type=str, default='./results', help="Path to the output directory.")
